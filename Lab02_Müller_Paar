@@ -1,0 +1,43 @@
+### Lab02 Navigationssysteme - Pedestrian Dead Reckoning ###
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.signal import find_peaks
+
+# Datenimport
+folder = "C:/Users/Loren/Documents/Graz/Studium/Geographie_Master/VU Navigationssysteme/Labs/Lab02/Daten/data_HeaderlineWithoutUnits/data_HeaderlineWithoutUnits"
+
+acc = pd.read_csv(os.path.join(folder, 'accelerometer.csv'))
+gyro = pd.read_csv(os.path.join(folder, 'gyroscope.csv'))
+mag = pd.read_csv(os.path.join(folder, 'magnetometer.csv'))
+baro = pd.read_csv(os.path.join(folder, 'barometer.csv'))
+ori = pd.read_csv(os.path.join(folder, 'referenceOrientation.csv'))
+ground_truth = pd.read_csv(os.path.join(folder, 'groundTruth.csv'))
+
+# Umwandlung der Zeit von ms in skeundnen
+acc['time'] = acc['time'] / 1000
+baro['time'] = baro['time'] / 1000
+ori['time'] = ori['time'] / 1000
+print(acc.head())
+acc['acc_total'] = np.sqrt((acc['acc_x']**2)+(acc['acc_y']**2)+(acc['acc_z']**2)) # berechnet die Gesamtbeschleunigung pro Sekunde
+print(acc.head())
+
+# Schritterfassung -- Berechnung (https://dganesan.github.io/mhealth-course/chapter2-steps/ch2-stepcounter.html)
+peaks, _ = find_peaks(acc['acc_total'], height=1, distance=100, prominence= 0.5, width= 2) # Distance zw. 50 und 100 bei 100Hz-Intervall
+
+#plt.plot(acc['acc_total'])
+#plt.plot(peaks, acc['acc_total'][peaks], "x")
+#plt.show()
+
+step_count = (len(peaks)) # 133 Schritte ??
+
+time_max = acc['time'].max()
+time_min = acc['time'].min()
+duration = int(time_max) - int(time_min)
+duration_minutes = duration/60
+steps_per_sec = duration/(step_count)
+print("\nNumber of steps:", step_count)
+print(f"The walk lasted for: {duration_minutes} minutes")
+print(f"Steps per Seconds: {steps_per_sec:.2f}")
