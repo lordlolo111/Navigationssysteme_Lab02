@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 
 # Datenimport
-folder = "../Daten/DatenRaw"
+folder = "Daten/DatenRaw"
 
 acc = pd.read_csv(os.path.join(folder, 'accelerometer.csv'))
 gyro = pd.read_csv(os.path.join(folder, 'gyroscope.csv'))
@@ -23,6 +23,9 @@ ori['time'] = ori['time'] / 1000
 print(acc.head())
 acc['acc_total'] = np.sqrt((acc['acc_x']**2)+(acc['acc_y']**2)+(acc['acc_z']**2)) # berechnet die Gesamtbeschleunigung pro Sekunde
 print(acc.head())
+
+# zuerst Filtern --> dann berechnen
+#
 
 # Schritterfassung -- Berechnung (https://dganesan.github.io/mhealth-course/chapter2-steps/ch2-stepcounter.html)
 peaks, _ = find_peaks(acc['acc_total'], height=1, distance=100, prominence= 0.5, width= 2) # Distance zw. 50 und 100 bei 100Hz-Intervall
