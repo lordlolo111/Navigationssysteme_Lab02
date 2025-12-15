@@ -41,3 +41,6 @@ steps_per_sec = duration/(step_count)
 print("\nNumber of steps:", step_count)
 print(f"The walk lasted for: {duration_minutes} minutes")
 print(f"Steps per Seconds: {steps_per_sec:.2f}")
+
+
+#Hallo
