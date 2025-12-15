@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 
 # Datenimport
-folder = "C:/Users/Loren/Documents/Graz/Studium/Geographie_Master/VU Navigationssysteme/Labs/Lab02/Daten/data_HeaderlineWithoutUnits/data_HeaderlineWithoutUnits"
+folder = "../Daten/DatenRaw"
 
 acc = pd.read_csv(os.path.join(folder, 'accelerometer.csv'))
 gyro = pd.read_csv(os.path.join(folder, 'gyroscope.csv'))
