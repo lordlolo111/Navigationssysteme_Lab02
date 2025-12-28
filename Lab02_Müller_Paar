@@ -16,7 +16,7 @@ baro = pd.read_csv(os.path.join(folder, 'barometer.csv'))
 ori = pd.read_csv(os.path.join(folder, 'referenceOrientation.csv'))
 ground_truth = pd.read_csv(os.path.join(folder, 'groundTruth.csv'))
 
-# Umwandlung der Zeit von ms in skeundnen
+# Umwandlung der Zeit von ms in Sekundnen
 acc['time'] = acc['time'] / 1000
 baro['time'] = baro['time'] / 1000
 ori['time'] = ori['time'] / 1000
@@ -30,9 +30,27 @@ print(acc.head())
 # Schritterfassung -- Berechnung (https://dganesan.github.io/mhealth-course/chapter2-steps/ch2-stepcounter.html)
 peaks, _ = find_peaks(acc['acc_total'], height=1, distance=100, prominence= 0.5, width= 2) # Distance zw. 50 und 100 bei 100Hz-Intervall
 
-#plt.plot(acc['acc_total'])
-#plt.plot(peaks, acc['acc_total'][peaks], "x")
-#plt.show()
+
+plt.figure(figsize=(10, 4))
+
+# Beschleunigung über Zeit
+plt.plot(acc['time'], acc['acc_total'], label='Acceleration')
+
+# Erkannte Schritte (Peaks) über Zeit
+plt.plot(
+    acc['time'].iloc[peaks],
+    acc['acc_total'].iloc[peaks],
+    "x",
+    label='Detected steps'
+)
+
+plt.xlabel("Time [s]")
+plt.ylabel("Acceleration [m/s²]")
+plt.title("Step Detection: total acceleration")
+plt.legend()
+plt.grid(True)
+plt.show()
+
 
 step_count = (len(peaks)) # 133 Schritte ??
 
@@ -40,12 +58,32 @@ time_max = acc['time'].max()
 time_min = acc['time'].min()
 duration = int(time_max) - int(time_min)
 duration_minutes = duration/60
-steps_per_sec = duration/(step_count)
+steps_per_sec = (step_count)/duration
 print("\nNumber of steps:", step_count)
 print(f"The walk lasted for: {duration_minutes} minutes")
 print(f"Steps per Seconds: {steps_per_sec:.2f}")
 
+#Schrittlänge Schätzung
+#Weinberg Model
 
-#Hallo
+acc_valleys = []
 
-#Hola
+for i, peak in enumerate(peaks):
+    if i == 0:
+        # erstes Minimum von Start bis erster Peak
+        valley = acc['acc_total'].iloc[:peak+1].min()
+    else:
+        # Minimum zwischen vorherigem und aktuellem Peak
+        valley = acc['acc_total'].iloc[peaks[i-1]:peak+1].min()
+    acc_valleys.append(valley)
+
+k = 0.4 # empirischer Faktor
+step_lengths = []
+
+for i, peak in enumerate(peaks):
+    step_len = k * (acc['acc_total'].iloc[peak] - acc_valleys[i])**0.25
+    step_lengths.append(step_len)
+
+# Gesamtdistanz
+total_distance = np.sum(step_lengths)
+print("Estimated distance (Weinberg-Model):", total_distance, "m")
