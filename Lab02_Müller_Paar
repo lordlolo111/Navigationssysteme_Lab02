@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
+import contextily as ctx
+from pyproj import Transformer
 
 # Datenimport
 folder = "Daten/DatenRaw"
@@ -111,10 +113,9 @@ yaw = np.arctan2(
 yaw = (yaw + np.pi) % (2 * np.pi) - np.pi
 
 #---------------------------------------------------------------------------#
-
 # Startpunkt
 lat0, lon0 = 47.06422, 15.45291  # Startkoordinaten in Grad
-R = 6378137  # Erdradius WGS84 in Metern
+R = 6378137  # Erdradius
 
 # ----------------------
 # Schrittweite und Richtung: N/E berechnen
@@ -125,30 +126,30 @@ E = np.cumsum([sl * np.sin(yaw[peaks[i]]) for i, sl in enumerate(step_lengths)])
 N = np.insert(N, 0, 0)
 E = np.insert(E, 0, 0)
 
-
 lat = lat0 + N / R * (180/np.pi)
 lon = lon0 + E / (R * np.cos(lat0*np.pi/180)) * (180/np.pi)
 
 
-# Visualisierung
-plt.figure(figsize=(8,8))
-plt.plot(lon, lat, 'o-', label='Estimated Path')
-plt.scatter(lon0, lat0, color='green', s=100, label='Start')
-plt.xlabel('Longitude [°]')
-plt.ylabel('Latitude [°]')
-plt.title('Pedestrian Dead Reckoning: Estimated Path in Lat/Lon')
-plt.legend()
-plt.grid(True)
-
-# Achsenbereich dynamisch setzen (FUNKTIONIERT NOCH NICHT)
-margin_lat = (lat.max() - lat.min()) * 0.1
-margin_lon = (lon.max() - lon.min()) * 0.1
-plt.xlim(lon.min() - margin_lon, lon.max() + margin_lon)
-plt.ylim(lat.min() - margin_lat, lat.max() + margin_lat)
-plt.show()
 
 # ----------------------
-# Step Counting
-step_count = len(step_lengths)
-print("Number of steps detected:", step_count)
-print("Estimated distance (Weinberg-Model):", np.sum(step_lengths), "m")
+# Projektion: WGS84 → Web Mercator
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+x, y = transformer.transform(lon, lat)
+x0, y0 = transformer.transform(lon0, lat0)
+
+# ----------------------
+# Visualisierung mit Basemap
+plt.figure(figsize=(9,9))
+plt.plot(x, y, 'o-', label='Estimated Path')
+plt.scatter(x0, y0, color='green', s=100, label='Start')
+ax = plt.gca()
+ctx.add_basemap(ax, source=ctx.providers.OpenStreetMap.Mapnik)
+plt.xlabel('East [m]')
+plt.ylabel('North [m]')
+plt.title('Pedestrian Dead Reckoning with Basemap')
+plt.ticklabel_format(style='plain', useOffset=False)
+plt.legend()
+plt.grid(True)
+plt.axis('equal')
+plt.show()
+
