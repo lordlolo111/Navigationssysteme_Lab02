@@ -51,7 +51,7 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
-
+#Grobe Schätzung der Schritte
 step_count = (len(peaks)) # 133 Schritte ??
 
 time_max = acc['time'].max()
@@ -59,7 +59,7 @@ time_min = acc['time'].min()
 duration = int(time_max) - int(time_min)
 duration_minutes = duration/60
 steps_per_sec = (step_count)/duration
-print("\nNumber of steps:", step_count)
+print("\nNumber of steps (Estimation):", step_count)
 print(f"The walk lasted for: {duration_minutes} minutes")
 print(f"Steps per Seconds: {steps_per_sec:.2f}")
 
@@ -87,3 +87,68 @@ for i, peak in enumerate(peaks):
 # Gesamtdistanz
 total_distance = np.sum(step_lengths)
 print("Estimated distance (Weinberg-Model):", total_distance, "m")
+
+#Direction estimation:
+#Berechnung Roll & Pitch:
+roll = np.arctan2(
+    -acc['acc_x'],
+    -acc['acc_z']
+)
+
+pitch = np.arctan2(
+    acc['acc_y'],
+    np.sqrt(acc['acc_x']**2 + acc['acc_z']**2)
+)
+
+# Yaw estimation:
+yaw = np.arctan2(
+    -mag['mag_x'] * np.cos(roll) + mag['mag_z'] * np.sin(roll),
+     mag['mag_y'] * np.cos(pitch)
+     + mag['mag_x'] * np.sin(pitch) * np.sin(roll)
+     + mag['mag_z'] * np.sin(pitch) * np.cos(roll)
+)
+#Normalisierung:
+yaw = (yaw + np.pi) % (2 * np.pi) - np.pi
+
+#---------------------------------------------------------------------------#
+
+# Startpunkt
+lat0, lon0 = 47.06422, 15.45291  # Startkoordinaten in Grad
+R = 6378137  # Erdradius WGS84 in Metern
+
+# ----------------------
+# Schrittweite und Richtung: N/E berechnen
+N = np.cumsum([sl * np.cos(yaw[peaks[i]]) for i, sl in enumerate(step_lengths)])
+E = np.cumsum([sl * np.sin(yaw[peaks[i]]) for i, sl in enumerate(step_lengths)])
+
+# Startpunkt hinzufügen
+N = np.insert(N, 0, 0)
+E = np.insert(E, 0, 0)
+
+
+lat = lat0 + N / R * (180/np.pi)
+lon = lon0 + E / (R * np.cos(lat0*np.pi/180)) * (180/np.pi)
+
+
+# Visualisierung
+plt.figure(figsize=(8,8))
+plt.plot(lon, lat, 'o-', label='Estimated Path')
+plt.scatter(lon0, lat0, color='green', s=100, label='Start')
+plt.xlabel('Longitude [°]')
+plt.ylabel('Latitude [°]')
+plt.title('Pedestrian Dead Reckoning: Estimated Path in Lat/Lon')
+plt.legend()
+plt.grid(True)
+
+# Achsenbereich dynamisch setzen (FUNKTIONIERT NOCH NICHT)
+margin_lat = (lat.max() - lat.min()) * 0.1
+margin_lon = (lon.max() - lon.min()) * 0.1
+plt.xlim(lon.min() - margin_lon, lon.max() + margin_lon)
+plt.ylim(lat.min() - margin_lat, lat.max() + margin_lat)
+plt.show()
+
+# ----------------------
+# Step Counting
+step_count = len(step_lengths)
+print("Number of steps detected:", step_count)
+print("Estimated distance (Weinberg-Model):", np.sum(step_lengths), "m")
