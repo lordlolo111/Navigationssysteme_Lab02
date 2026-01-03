@@ -5,11 +5,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
+from scipy.signal import savgol_filter
+from pathlib import Path
 import contextily as ctx
 from pyproj import Transformer
 
 # Datenimport
-folder = "Daten/DatenRaw"
+dir = Path(__file__).resolve().parent
+folder = Path(dir)/"Daten"/"DatenRaw"
 
 acc = pd.read_csv(os.path.join(folder, 'accelerometer.csv'))
 gyro = pd.read_csv(os.path.join(folder, 'gyroscope.csv'))
@@ -26,29 +29,52 @@ print(acc.head())
 acc['acc_total'] = np.sqrt((acc['acc_x']**2)+(acc['acc_y']**2)+(acc['acc_z']**2)) # berechnet die Gesamtbeschleunigung pro Sekunde
 print(acc.head())
 
-# zuerst Filtern --> dann berechnen
-#
+# zuerst Filtern --> dann berechnen (Savitzky-Golay Filter) (https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html)
+acc['acc_total_filtered'] = savgol_filter(acc['acc_total'], window_length= 21, polyorder= 3)
+
 
 # Schritterfassung -- Berechnung (https://dganesan.github.io/mhealth-course/chapter2-steps/ch2-stepcounter.html)
-peaks, _ = find_peaks(acc['acc_total'], height=1, distance=100, prominence= 0.5, width= 2) # Distance zw. 50 und 100 bei 100Hz-Intervall
+peaks, _ = find_peaks(acc['acc_total_filtered'], height=1, distance=100, prominence= 0.5, width= 2) # Distance zw. 50 und 100 bei 100Hz-Intervall
 
 
 plt.figure(figsize=(10, 4))
 
-# Beschleunigung über Zeit
-plt.plot(acc['time'], acc['acc_total'], label='Acceleration')
+# Beschleunigung über Zeit mit & ohne Filter
+plt.plot(acc['time'], acc['acc_total'], alpha=0.4, label='Raw acceleration')
+plt.plot(acc['time'], acc['acc_total_filtered'], label='Filtered acceleration')
 
 # Erkannte Schritte (Peaks) über Zeit
 plt.plot(
     acc['time'].iloc[peaks],
-    acc['acc_total'].iloc[peaks],
+    acc['acc_total_filtered'].iloc[peaks],
     "x",
     label='Detected steps'
 )
 
 plt.xlabel("Time [s]")
 plt.ylabel("Acceleration [m/s²]")
-plt.title("Step Detection: total acceleration")
+plt.title("Step Detection: Filtered Total acceleration")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Höhenabschätzung
+p0 = baro['pressure'].iloc[0] # vorherrschendre Druck an der Ausgangsposition
+# Formel für die Höhenberechnung auf Basis der barometrischen Daten
+baro['height'] = (293.15 / (6.5e-3))* (
+    (baro['pressure']/ p0) ** (-0.1903) - 1
+)
+#Anwendung des Savitzky-Golay Filters für die Höhe (same wie bei der Schrittlänge)
+baro['height_filtered'] = savgol_filter(baro['height'], window_length= 21, polyorder= 3)
+
+#Visualisierung der Höhendaten
+plt.figure(figsize=(10,4))
+plt.plot(baro['time'], baro['height'], alpha=0.4, label='Raw height')
+plt.plot(baro['time'], baro['height_filtered'], label='Filtered height')
+
+plt.xlabel("Time [s]")
+plt.ylabel("Relative height [m]")
+plt.title("Relative height estimation from barometer data")
 plt.legend()
 plt.grid(True)
 plt.show()
@@ -89,6 +115,40 @@ for i, peak in enumerate(peaks):
 # Gesamtdistanz
 total_distance = np.sum(step_lengths)
 print("Estimated distance (Weinberg-Model):", total_distance, "m")
+
+# Anpassung der Schrittlängen Schätzung inklusive der Höhendaten --> Stiegen z.b.
+
+height_at_peak = np.interp( #Interpoliert Höhe an Stelle der Schritt-Peak-Zeitpunkte
+    acc['time'].iloc[peaks], 
+    baro['time'],
+    baro['height_filtered']
+)
+
+# Angepasste Schrittweite
+k = 0.4  # Weinberg Faktor
+step_lengths_adjusted = []
+for i, peak in enumerate(peaks):
+    # Weinberg-Schritt
+    step_len = k * (acc['acc_total_filtered'].iloc[peak] - acc_valleys[i])**0.25
+    # Stiegenerkennung: Δh > 0.15 m → Treppe
+    if i > 0:
+        delta_h = height_at_peak[i] - height_at_peak[i-1]
+        if abs(delta_h) > 0.15:  # Schwelle in m
+            step_len = 0.3  # verkürzte Schrittweite bei Treppe
+    step_lengths_adjusted.append(step_len)
+
+# Gesamtdistanz
+total_distance_adjusted = np.sum(step_lengths_adjusted)
+print("Estimated distance with stairs adjustment:", total_distance_adjusted, "m")
+
+# Visualization of stair adjustment
+plt.figure(figsize=(10,4))
+plt.plot(range(len(step_lengths_adjusted)), step_lengths_adjusted, '-o')
+plt.xlabel("Step index")
+plt.ylabel("Step length [m]")
+plt.title("Step lengths with stair adjustment")
+plt.grid(True)
+plt.show()
 
 #Direction estimation:
 #Berechnung Roll & Pitch:
