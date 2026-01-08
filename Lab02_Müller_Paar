@@ -25,16 +25,29 @@ ground_truth = pd.read_csv(os.path.join(folder, 'groundTruth.csv'))
 acc['time'] = acc['time'] / 1000
 baro['time'] = baro['time'] / 1000
 ori['time'] = ori['time'] / 1000
-print(acc.head())
-acc['acc_total'] = np.sqrt((acc['acc_x']**2)+(acc['acc_y']**2)+(acc['acc_z']**2)) # berechnet die Gesamtbeschleunigung pro Sekunde
-print(acc.head())
 
+fs = 1/np.mean(np.diff(acc['time'])) # Samplingrate
+
+
+# Berechnung und Filterung der Beschleunigung
+acc['acc_total'] = np.sqrt((acc['acc_x']**2)+(acc['acc_y']**2)+(acc['acc_z']**2)) # berechnet die Gesamtbeschleunigung pro Sekunde
 # zuerst Filtern --> dann berechnen (Savitzky-Golay Filter) (https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html)
 acc['acc_total_filtered'] = savgol_filter(acc['acc_total'], window_length= 21, polyorder= 3)
 
 
 # Schritterfassung -- Berechnung (https://dganesan.github.io/mhealth-course/chapter2-steps/ch2-stepcounter.html)
-peaks, _ = find_peaks(acc['acc_total_filtered'], height=1, distance=100, prominence= 0.5, width= 2) # Distance zw. 50 und 100 bei 100Hz-Intervall
+def detect_steps(acc_signal, fs, height_factor, min_distance_s):
+    # adaptive Schwelle
+    height_threshold = np.mean(acc_signal) + height_factor * np.std(acc_signal)
+    distance_samples = int(min_distance_s * fs)
+    peaks, _ = find_peaks(acc_signal, height=height_threshold, distance=distance_samples)
+    return peaks
+
+peaks = detect_steps(acc['acc_total_filtered'], fs, 0.5, 0.5)
+step_count = len(peaks)
+print(f"Detected steps: {step_count}")
+
+peaks, _ = find_peaks(acc['acc_total_filtered'], height=1, distance=50, prominence= 0.8, width= 2) # Distance zw. 50 und 100 bei 100Hz-Intervall
 
 
 plt.figure(figsize=(10, 4))
@@ -79,8 +92,6 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
-#Grobe Schätzung der Schritte
-step_count = (len(peaks)) # 133 Schritte ??
 
 time_max = acc['time'].max()
 time_min = acc['time'].min()
@@ -105,7 +116,7 @@ for i, peak in enumerate(peaks):
         valley = acc['acc_total'].iloc[peaks[i-1]:peak+1].min()
     acc_valleys.append(valley)
 
-k = 0.4 # empirischer Faktor
+k = 0.4 # empirischer Faktor (entweder 0,6 oder 0,4)
 step_lengths = []
 
 for i, peak in enumerate(peaks):
@@ -130,10 +141,10 @@ step_lengths_adjusted = []
 for i, peak in enumerate(peaks):
     # Weinberg-Schritt
     step_len = k * (acc['acc_total_filtered'].iloc[peak] - acc_valleys[i])**0.25
-    # Stiegenerkennung: Δh > 0.15 m → Treppe
+    # Stiegenerkennung: Δh > 0.2m --> ÖNORM beachten!!
     if i > 0:
         delta_h = height_at_peak[i] - height_at_peak[i-1]
-        if abs(delta_h) > 0.15:  # Schwelle in m
+        if abs(delta_h) > 0.20:  # Schwelle in m
             step_len = 0.3  # verkürzte Schrittweite bei Treppe
     step_lengths_adjusted.append(step_len)
 
@@ -169,25 +180,64 @@ yaw = np.arctan2(
      + mag['mag_x'] * np.sin(pitch) * np.sin(roll)
      + mag['mag_z'] * np.sin(pitch) * np.cos(roll)
 )
-#Normalisierung:
-yaw = (yaw + np.pi) % (2 * np.pi) - np.pi
+yaw= (yaw + np.pi) % (2 * np.pi) - np.pi
+yaw_sg = savgol_filter(yaw,window_length=21,polyorder=3)
+#Yaw an Schrittzeitpunkten
+yaw_steps = yaw_sg[peaks]
 
-#---------------------------------------------------------------------------#
+# Trajectory 
+def estimate_trajectory(step_lengths, yaw_steps, lat0, lon0):
+    R = 6378137  # Erdradius in m
+    N = np.zeros(len(step_lengths) + 1)
+    E = np.zeros(len(step_lengths) + 1)
+    
+    for i in range(len(step_lengths)):
+        N[i+1] = N[i] + step_lengths[i] * np.cos(yaw_steps[i])
+        E[i+1] = E[i] + step_lengths[i] * np.sin(yaw_steps[i])
+    
+    lat = lat0 + (N / R) * (180 / np.pi)
+    lon = lon0 + (E / (R * np.cos(np.deg2rad(lat0)))) * (180 / np.pi)
+    
+    return N, E, lat, lon
+
+N, E, lat, lon = estimate_trajectory(step_lengths_adjusted, yaw_steps, 47.06422, 15.45291)
+
+# Ergebnis speichern
+df_geo = pd.DataFrame({
+    'step_id': np.arange(len(lat)),
+    'time_s': np.insert(acc['time'].iloc[peaks].values, 0, acc['time'].iloc[peaks].values[0]),
+    'latitude': lat,
+    'longitude': lon,
+    'north_m': N,
+    'east_m': E
+})
+df_geo.to_csv("pdr_trajectory_new_anderesk.csv", index=False)
+
+
+# Compare with Ground-Truth and calculate Error
+N_pdr_end, E_pdr_end = N[-1], E[-1]
+N_gt_end, E_gt_end = ground_truth['y'].values[-1], ground_truth['x'].values[-1]
+
+endpoint_error = np.sqrt((N_pdr_end - N_gt_end)**2 + (E_pdr_end - E_gt_end)**2)
+print(f"Endpoint error: {endpoint_error:.2f} m")
+
+
+"""
+plt.figure(figsize=(6,6))
+plt.plot(E, N, 'o-')
+plt.xlabel("East [m]")
+plt.ylabel("North [m]")
+plt.title("PDR trajectory in local coordinate system")
+plt.grid(True)
+plt.axis('equal')
+plt.show()
+
 # Startpunkt
 lat0, lon0 = 47.06422, 15.45291  # Startkoordinaten in Grad
 R = 6378137  # Erdradius
 
-# ----------------------
-# Schrittweite und Richtung: N/E berechnen
-N = np.cumsum([sl * np.cos(yaw[peaks[i]]) for i, sl in enumerate(step_lengths)])
-E = np.cumsum([sl * np.sin(yaw[peaks[i]]) for i, sl in enumerate(step_lengths)])
-
-# Startpunkt hinzufügen
-N = np.insert(N, 0, 0)
-E = np.insert(E, 0, 0)
-
-lat = lat0 + N / R * (180/np.pi)
-lon = lon0 + E / (R * np.cos(lat0*np.pi/180)) * (180/np.pi)
+lat = lat0 + (N / R) * (180/np.pi)
+lon = lon0 + (E / (R * np.cos(np.deg2rad(lat0)))) * (180 / np.pi)
 
 
 
@@ -211,5 +261,5 @@ plt.ticklabel_format(style='plain', useOffset=False)
 plt.legend()
 plt.grid(True)
 plt.axis('equal')
-plt.show()
+plt.show()"""
 
