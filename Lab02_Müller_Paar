@@ -222,44 +222,4 @@ endpoint_error = np.sqrt((N_pdr_end - N_gt_end)**2 + (E_pdr_end - E_gt_end)**2)
 print(f"Endpoint error: {endpoint_error:.2f} m")
 
 
-"""
-plt.figure(figsize=(6,6))
-plt.plot(E, N, 'o-')
-plt.xlabel("East [m]")
-plt.ylabel("North [m]")
-plt.title("PDR trajectory in local coordinate system")
-plt.grid(True)
-plt.axis('equal')
-plt.show()
-
-# Startpunkt
-lat0, lon0 = 47.06422, 15.45291  # Startkoordinaten in Grad
-R = 6378137  # Erdradius
-
-lat = lat0 + (N / R) * (180/np.pi)
-lon = lon0 + (E / (R * np.cos(np.deg2rad(lat0)))) * (180 / np.pi)
-
-
-
-# ----------------------
-# Projektion: WGS84 → Web Mercator
-transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-x, y = transformer.transform(lon, lat)
-x0, y0 = transformer.transform(lon0, lat0)
-
-# ----------------------
-# Visualisierung mit Basemap
-plt.figure(figsize=(9,9))
-plt.plot(x, y, 'o-', label='Estimated Path')
-plt.scatter(x0, y0, color='green', s=100, label='Start')
-ax = plt.gca()
-ctx.add_basemap(ax, source=ctx.providers.OpenStreetMap.Mapnik)
-plt.xlabel('East [m]')
-plt.ylabel('North [m]')
-plt.title('Pedestrian Dead Reckoning with Basemap')
-plt.ticklabel_format(style='plain', useOffset=False)
-plt.legend()
-plt.grid(True)
-plt.axis('equal')
-plt.show()"""
 
